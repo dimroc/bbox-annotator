@@ -1,13 +1,13 @@
 <div style="display:none;">
-<link rel="stylesheet" href="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/themes/smoothness/jquery-ui.css" />
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
-<script src="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/jquery-ui.js"></script>
+<link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/themes/smoothness/jquery-ui.css" />
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/jquery-ui.js"></script>
 </div>
 
 <div style="display:inline-block;vertical-align:top;">
-  <h1>Annotate objects in the picture</h1>
+  <h1>Annotate heads in the picture</h1>
   <p>
-    Draw a rectangle over an object with mouse. Then, name that object.
+    Click on each head to record its presence. If you cannot see the head, ignore the body and skip that individual.
   </p>
   <div>
     <label for="comment"><em>Comment:</em></label><br />
@@ -25,7 +25,6 @@
   var BBoxSelector;
 
   BBoxSelector = (function() {
-
     function BBoxSelector(image_frame, options) {
       if (options == null) {
         options = {};
@@ -47,7 +46,7 @@
     }
 
     BBoxSelector.prototype.create_label_box = function(options) {
-      var label, _i, _len, _ref;
+      var i, label, len, ref, ref1;
       options.labels || (options.labels = ["object"]);
       this.label_box = $('<div class="label_box"></div>');
       this.label_box.css({
@@ -55,6 +54,14 @@
       });
       this.image_frame.append(this.label_box);
       switch (options.input_method) {
+        case 'dot':
+          if ($.isArray(options.labels)) {
+            options.labels = options.labels[0];
+          }
+          this.label_input = $('<input class="label_input" name="label" type="text">');
+          this.label_box.append(this.label_input);
+          this.label_input.val(options.labels);
+          break;
         case 'select':
           if (typeof options.labels === "string") {
             options.labels = [options.labels];
@@ -62,9 +69,9 @@
           this.label_input = $('<select class="label_input" name="label"></select>');
           this.label_box.append(this.label_input);
           this.label_input.append($('<option value>choose an item</option>'));
-          _ref = options.labels;
-          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-            label = _ref[_i];
+          ref = options.labels;
+          for (i = 0, len = ref.length; i < len; i++) {
+            label = ref[i];
             this.label_input.append('<option value="' + label + '">' + label + '</option>');
           }
           this.label_input.change(function(e) {
@@ -93,6 +100,7 @@
         default:
           throw 'Invalid label_input parameter: ' + options.input_method;
       }
+      options.interactive = (ref1 = options.input_method) === 'fixed' || ref1 === 'dot';
       return this.label_box.hide();
     };
 
@@ -115,6 +123,15 @@
       };
     };
 
+    BBoxSelector.prototype.add_point = function(pageX, pageY) {
+      var data;
+      this.offset = this.crop(pageX, pageY);
+      this.pointer = this.crop(pageX + 2, pageY + 2);
+      data = this.rectangle();
+      data.label = $.trim(this.label_input.val().toLowerCase());
+      return data;
+    };
+
     BBoxSelector.prototype.update_rectangle = function(pageX, pageY) {
       this.pointer = this.crop(pageX, pageY);
       return this.refresh();
@@ -125,7 +142,6 @@
       document.onselectstart = function() {
         return true;
       };
-      this.label_box.show();
       return this.label_input.focus();
     };
 
@@ -135,7 +151,7 @@
       this.selector.hide();
       data = this.rectangle();
       data.label = $.trim(this.label_input.val().toLowerCase());
-      if (options.input_method !== 'fixed') {
+      if (!options.interactive) {
         this.label_input.val('');
       }
       return data;
@@ -156,17 +172,15 @@
     };
 
     BBoxSelector.prototype.refresh = function() {
-      var rect;
-      rect = this.rectangle();
       this.selector.css({
-        left: (rect.left - this.border_width) + 'px',
-        top: (rect.top - this.border_width) + 'px',
-        width: rect.width + 'px',
-        height: rect.height + 'px'
+        left: (this.pointer.x - 2) + 'px',
+        top: (this.pointer.y - 2) + 'px',
+        width: '4px',
+        height: '4px'
       });
       return this.label_box.css({
-        left: (rect.left - this.border_width) + 'px',
-        top: (rect.top + rect.height + this.border_width) + 'px'
+        left: this.pointer.x + 'px',
+        top: (this.pointer.y - 5) + 'px'
       });
     };
 
@@ -179,13 +193,12 @@
   })();
 
   this.BBoxAnnotator = (function() {
-
     function BBoxAnnotator(options) {
       var annotator, image_element;
       annotator = this;
       this.annotator_element = $(options.id || "#bbox_annotator");
       this.border_width = options.border_width || 2;
-      this.show_label = options.show_label || (options.input_method !== "fixed");
+      this.show_label = false;
       this.image_frame = $('<div class="image_frame"></div>');
       this.annotator_element.append(this.image_frame);
       image_element = new Image();
@@ -219,7 +232,8 @@
       status = 'free';
       this.hit_menuitem = false;
       annotator = this;
-      this.annotator_element.mousedown(function(e) {
+      this.annotator_element.mouseup(function(e) {
+        var data;
         if (!annotator.hit_menuitem) {
           switch (status) {
             case 'free':
@@ -228,31 +242,21 @@
                 selector.get_input_element().blur();
               }
               if (e.which === 1) {
-                selector.start(e.pageX, e.pageY);
-                status = 'hold';
+                data = selector.add_point(e.pageX, e.pageY);
+                console.log("data: " + data.left + " " + data.top);
+                annotator.add_entry(data);
+                if (annotator.onchange) {
+                  annotator.onchange(annotator.entries);
+                }
+                status = 'free';
               }
           }
         }
         annotator.hit_menuitem = false;
         return true;
       });
-      $(window).mousemove(function(e) {
-        switch (status) {
-          case 'hold':
-            selector.update_rectangle(e.pageX, e.pageY);
-        }
-        return true;
-      });
       $(window).mouseup(function(e) {
-        switch (status) {
-          case 'hold':
-            selector.update_rectangle(e.pageX, e.pageY);
-            selector.input_label(options);
-            status = 'input';
-            if (options.input_method === 'fixed') {
-              selector.get_input_element().blur();
-            }
-        }
+        console.log(status);
         return true;
       });
       selector.get_input_element().blur(function(e) {
@@ -306,7 +310,8 @@
         "height": entry.height + "px",
         "color": "rgb(127,255,127)",
         "font-family": "monospace",
-        "font-size": "small"
+        "font-size": "small",
+        "margin": "-1px"
       });
       close_button = $('<div></div>').appendTo(box_element).css({
         "position": "absolute",
@@ -328,7 +333,7 @@
         "user-select": "none",
         "text-align": "center"
       });
-      $("<div></div>").appendTo(close_button).html('×').css({
+      $("<div></div>").appendTo(close_button).html('&#215;').css({
         "display": "block",
         "text-align": "center",
         "width": "16px",
@@ -366,7 +371,7 @@
     };
 
     BBoxAnnotator.prototype.clear_all = function(e) {
-      $(".annotated_bounding_box").detach();
+      this.annotator_element.find(".annotated_bounding_box").detach();
       this.entries.splice(0);
       return this.onchange(this.entries);
     };
@@ -383,8 +388,7 @@ $(document).ready(function() {
   // Initialize the bounding-box annotator.
   var annotator = new BBoxAnnotator({
     url: "${image_url}",
-    input_method: 'text', // Can be one of ['text', 'select', 'fixed']
-    labels: ["dress", "top", "skirt", "pants", "shoes"], // Label of the object.
+    input_method: 'dot',
     onchange: function(entries) {
       $("#annotation_data").val(JSON.stringify(entries));
       if (entries.length > 0 &&
