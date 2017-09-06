@@ -30,6 +30,11 @@ class BBoxSelector
       "position": "absolute"
     @image_frame.append @label_box
     switch options.input_method
+      when 'dot'
+        options.labels = options.labels[0] if $.isArray options.labels
+        @label_input = $('<input class="label_input" name="label" type="text">')
+        @label_box.append @label_input
+        @label_input.val(options.labels)
       when 'select'
         options.labels = [options.labels] if typeof options.labels == "string"
         @label_input = $('<select class="label_input" name="label"></select>')
@@ -54,6 +59,8 @@ class BBoxSelector
         @label_input.val(options.labels)
       else
         throw 'Invalid label_input parameter: ' + options.input_method
+
+    options.interactive = options.input_method in ['fixed', 'dot']
     @label_box.hide()
 
   # Crop x and y to the image size.
@@ -74,6 +81,14 @@ class BBoxSelector
     document.onselectstart = () ->
       false
 
+  add_point: (pageX, pageY) ->
+    @offset = this.crop(pageX, pageY)
+    @pointer = this.crop(pageX+2, pageY+2)
+    #this.refresh()
+    data = this.rectangle()
+    data.label = $.trim(@label_input.val().toLowerCase())
+    data
+
   # When a selection updates.
   update_rectangle: (pageX, pageY) ->
     @pointer = this.crop(pageX, pageY)
@@ -84,7 +99,7 @@ class BBoxSelector
     $('body').css('cursor', 'default')
     document.onselectstart = () ->
       true
-    @label_box.show()
+    #@label_box.show()
     @label_input.focus()
 
   # Finish and return the annotation.
@@ -93,7 +108,7 @@ class BBoxSelector
     @selector.hide()
     data = this.rectangle()
     data.label = $.trim(@label_input.val().toLowerCase())
-    @label_input.val('') unless options.input_method == 'fixed'
+    @label_input.val('') unless options.interactive
     data
 
   # Get a rectangle.
@@ -110,16 +125,15 @@ class BBoxSelector
 
   # Update css of the box.
   refresh: () ->
-    rect = this.rectangle()
     @selector.css(
-      left: (rect.left - @border_width) + 'px'
-      top: (rect.top - @border_width) + 'px'
-      width: rect.width + 'px'
-      height: rect.height + 'px'
+      left: (@pointer.x-2) + 'px'
+      top: (@pointer.y-2) + 'px'
+      width: '4px'
+      height: '4px'
     )
     @label_box.css(
-      left: (rect.left - @border_width) + 'px'
-      top: (rect.top + rect.height + @border_width) + 'px'
+      left: @pointer.x + 'px'
+      top: (@pointer.y - 5) + 'px'
     )
 
   # Return input element.
@@ -133,7 +147,7 @@ class @BBoxAnnotator
     annotator = this
     @annotator_element = $(options.id || "#bbox_annotator")
     @border_width = options.border_width || 2
-    @show_label = options.show_label || (options.input_method != "fixed")
+    @show_label = false # options.show_label || (!options.interactive)
     @image_frame = $('<div class="image_frame"></div>')
     @annotator_element.append @image_frame
     image_element = new Image()
@@ -162,28 +176,33 @@ class @BBoxAnnotator
     status = 'free'
     @hit_menuitem = false
     annotator = this
-    @annotator_element.mousedown (e) ->
+    @annotator_element.mouseup (e) ->
       unless annotator.hit_menuitem
         switch status
           when 'free', 'input'
             selector.get_input_element().blur() if status == 'input'
             if e.which == 1 # left button
-              selector.start(e.pageX, e.pageY)
-              status = 'hold'
+              data = selector.add_point(e.pageX, e.pageY)
+              console.log "data: #{data.left} #{data.top}"
+              annotator.add_entry data
+              annotator.onchange annotator.entries if annotator.onchange
+              status = 'free'
+
       annotator.hit_menuitem = false
       true
-    $(window).mousemove (e) ->
-      switch status
-        when 'hold'
-          selector.update_rectangle(e.pageX, e.pageY)
-      true
+    #$(window).mousemove (e) ->
+      #switch status
+        #when 'hold'
+          #selector.update_rectangle(e.pageX, e.pageY)
+      #true
     $(window).mouseup (e) ->
-      switch status
-        when 'hold'
-          selector.update_rectangle(e.pageX, e.pageY)
-          selector.input_label(options)
-          status = 'input'
-          selector.get_input_element().blur() if options.input_method == 'fixed'
+      console.log status
+      #switch status
+        #when 'hold'
+          #selector.update_rectangle(e.pageX, e.pageY)
+          #selector.input_label(options)
+          #status = 'input'
+          #selector.get_input_element().blur() if options.interactive
       true
     selector.get_input_element().blur (e) ->
       switch status
@@ -221,7 +240,8 @@ class @BBoxAnnotator
       "height": entry.height + "px",
       "color": "rgb(127,255,127)",
       "font-family": "monospace",
-      "font-size": "small"
+      "font-size": "small",
+      "margin": "-1px" # Simple way to center box over clicked point without manipulating data
     close_button = $('<div></div>').appendTo(box_element).css
       "position": "absolute",
       "top": "-8px",
