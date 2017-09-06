@@ -394,10 +394,6 @@ $(document).ready(function() {
       if (entries.length > 0 &&
           assignment_id != "" &&
           assignment_id != "ASSIGNMENT_ID_NOT_AVAILABLE") {
-        $("#submitButton").removeAttr("disabled");
-      }
-      else {
-        $("#submitButton").attr("disabled", "disabled");
       }
     }
   });
@@ -406,7 +402,6 @@ $(document).ready(function() {
     annotator.clear_all();
   });
   // Disable the submission at the beginning.
-  $("#submitButton").attr("disabled", "disabled");
   $("#submitButton").detach().appendTo("#button_paragraph");
   if (assignment_id == "ASSIGNMENT_ID_NOT_AVAILABLE") {
     $("#submitButton").val("This is preview");
